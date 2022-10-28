@@ -1,23 +1,26 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Description: Test deployment using CloudFormation
+
 Parameters:
   SubnetID:
     Type: String
+    Default: subnet-d4ae59bf
 
 Resources:
   Cluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: deployment-example-cluster
+      ClusterName: cluster-deployment
 
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: deployment-example-log-group
+      LogGroupName: log-group-deployment
 
   ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: deployment-example-role
+      RoleName: test-role
       AssumeRolePolicyDocument:
         Statement:
           - Effect: Allow
@@ -30,8 +33,8 @@ Resources:
   ContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: ContainerSecurityGroup
-      GroupDescription: Security group for NGINX container
+      GroupName: ECSSecurityGroup
+      GroupDescription: Test Security group
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -41,13 +44,13 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: deployment-example-task
+      Family: task-deployment
       Cpu: 256
       Memory: 512
       NetworkMode: awsvpc
       ExecutionRoleArn: !Ref ExecutionRole
       ContainerDefinitions:
-        - Name: deployment-example-container
+        - Name: nginx-container
           Image: nginx:1.17.7
           PortMappings:
             - ContainerPort: 80
@@ -64,7 +67,7 @@ Resources:
   Service:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: deployment-example-service
+      ServiceName: test-service
       Cluster: !Ref Cluster
       TaskDefinition: !Ref TaskDefinition
       DesiredCount: 1
@@ -76,3 +79,29 @@ Resources:
             - !Ref SubnetID
           SecurityGroups:
             - !GetAtt ContainerSecurityGroup.GroupId
+
+  Test-Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: "UserID"
+          AttributeType: "S"
+        -
+          AttributeName: "Name"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "UserID"
+          KeyType: "HASH"
+        -
+          AttributeName: "Name"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+Outputs:
+  Test-Output:
+    Description: Table created with this template
+    Value: !Ref Test-Table
