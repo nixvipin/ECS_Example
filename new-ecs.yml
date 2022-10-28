@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Creating ECS service
+Description: Creating ECS
 Parameters:
   AppName:
     Type: String
@@ -30,34 +30,43 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Ref AppName
-      Cpu: 256
-      Memory: 512
-      NetworkMode: awsvpc
-      ExecutionRoleArn: !Ref ExecutionRole
       ContainerDefinitions:
-        - Name: nginx-container
+        - Name: !Ref AppName
           Image: nginx:1.17.7
           PortMappings:
             - ContainerPort: !Ref AppContainerPort
               HostPort: !Ref AppHostPort
+          Cpu: '10'
+          Memory: '500'
 
   service:
     Type: AWS::ECS::Service
     Properties:
       Cluster: !Ref cluster
-      DesiredCount: 1
+      DesiredCount: 0
       HealthCheckGracePeriodSeconds: !Ref HealthCheckGracePeriodSeconds
       LoadBalancers:
         - ContainerName: !Ref AppName
           ContainerPort: !Ref AppContainerPort
           LoadBalancerName: !Ref elb
-      TaskDefinition: !Ref taskdefinition
+      TaskDefinition: !Ref TaskDefinition
       ServiceName: !Ref ServiceName
       Role: !Ref Role
 
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: ECSSecurityGroup
+      GroupDescription: Test Security group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+
   elb:
-    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       LoadBalancerName: !Ref LoadBalancerName
       Listeners:
@@ -66,6 +75,8 @@ Resources:
           Protocol: HTTP
       Subnets:
         - !Ref Subnet1
+      SecurityGroups:
+        - !GetAtt ContainerSecurityGroup.GroupId
     DependsOn: GatewayAttachment
 
   VPC:
