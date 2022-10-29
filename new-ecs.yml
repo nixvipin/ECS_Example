@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Creating ECS
+Description: Creating ECS service
 Parameters:
   AppName:
     Type: String
     Description: Name of app requiring ELB exposure
-    Default: testapp
+    Default: testApp
   AppContainerPort:
     Type: Number
     Description: Container port of app requiring ELB exposure
@@ -14,124 +14,70 @@ Parameters:
     Description: Host port of app requiring ELB exposure
     Default: '80'
   ServiceName:
+    Default: appTest
     Type: String
-    Default: testService
   LoadBalancerName:
+    Default: appTest
     Type: String
-    Default: testApp
-
+  HealthCheckGracePeriodSeconds:
+    Default: 5
+    Type: Number
 Resources:
   cluster:
     Type: AWS::ECS::Cluster
 
-  TaskDefinition:
+  taskdefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       ContainerDefinitions:
         - Name: !Ref AppName
-          Image: nginx:1.17.7
+          Image: nginx:latest
+          Cpu: '10'
           PortMappings:
             - ContainerPort: !Ref AppContainerPort
               HostPort: !Ref AppHostPort
-          Cpu: '10'
           Memory: '500'
+          Essential: true
 
   service:
     Type: AWS::ECS::Service
     Properties:
-      ServiceName: testDeployment
       Cluster: !Ref cluster
-      TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 2
-      LaunchType: FARGATE
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          Subnets:
-            - !Ref Subnet1
-            - !Ref Subnet2
-          SecurityGroups:
-            - !GetAtt ContainerSecurityGroup.GroupId
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 0
+      HealthCheckGracePeriodSeconds: !Ref HealthCheckGracePeriodSeconds
       LoadBalancers:
-        - TargetGroupArn: !Ref TargetGroup
-          ContainerName: !Ref AppName
+        - ContainerName: !Ref AppName
           ContainerPort: !Ref AppContainerPort
+          LoadBalancerName: !Ref elb
+      TaskDefinition: !Ref taskdefinition
+      ServiceName: !Ref ServiceName
       Role: !Ref Role
 
-  ContainerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: ECSSecurityGroup
-      GroupDescription: Test Security group
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-
-  elbSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: LoadBalancerSecurityGroup
-      GroupDescription: Security group for load balancer
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      VpcId: !Ref VPC
-      
-
   elb:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
-      Name: !Ref LoadBalancerName
+      LoadBalancerName: !Ref LoadBalancerName
+      Listeners:
+        - InstancePort: !Ref AppHostPort
+          LoadBalancerPort: '80'
+          Protocol: HTTP
       Subnets:
         - !Ref Subnet1
-        - !Ref Subnet2
-      SecurityGroups:
-        - !GetAtt elbSecurityGroup.GroupId
-
-  LoadBalancerListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref elb
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref TargetGroup
-
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      TargetType: ip
-      Name: deployment-target-group
-      Port: 80
-      Protocol: HTTP
-      VpcId: !Ref VPC
+    DependsOn: GatewayAttachment
 
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.192.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      InstanceTenancy: default
+      CidrBlock: 10.0.0.0/24
 
   Subnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.192.20.0/24
-      AvailabilityZone: "ap-south-1a"
-
-  Subnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.192.21.0/24
-      AvailabilityZone: "ap-south-1b"
+      CidrBlock: 10.0.0.0/25
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
