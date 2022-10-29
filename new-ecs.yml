@@ -4,7 +4,7 @@ Parameters:
   AppName:
     Type: String
     Description: Name of app requiring ELB exposure
-    Default: simple-app
+    Default: testapp
   AppContainerPort:
     Type: Number
     Description: Container port of app requiring ELB exposure
@@ -15,13 +15,10 @@ Parameters:
     Default: '80'
   ServiceName:
     Type: String
-    Default: Test-Service
+    Default: testService
   LoadBalancerName:
     Type: String
-    Default: Test-App
-  HealthCheckGracePeriodSeconds:
-    Type: String
-    Default: 5
+    Default: testApp
 
 Resources:
   cluster:
@@ -42,15 +39,23 @@ Resources:
   service:
     Type: AWS::ECS::Service
     Properties:
+      ServiceName: testDeployment
       Cluster: !Ref cluster
-      DesiredCount: 0
-      HealthCheckGracePeriodSeconds: !Ref HealthCheckGracePeriodSeconds
-      LoadBalancers:
-        - ContainerName: !Ref AppName
-          ContainerPort: !Ref AppContainerPort
-          LoadBalancerName: !Ref elb
       TaskDefinition: !Ref TaskDefinition
-      ServiceName: !Ref ServiceName
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref Subnet1
+            - !Ref Subnet2
+          SecurityGroups:
+            - !GetAtt ContainerSecurityGroup.GroupId
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroup
+          ContainerName: !Ref AppName
+          ContainerPort: !Ref AppContainerPort
       Role: !Ref Role
 
   ContainerSecurityGroup:
@@ -64,35 +69,67 @@ Resources:
           ToPort: 80
           CidrIp: 0.0.0.0/0
 
+  elbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LoadBalancerSecurityGroup
+      GroupDescription: Security group for load balancer
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
 
   elb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      LoadBalancerName: !Ref LoadBalancerName
-      Listeners:
-        - InstancePort: !Ref AppHostPort
-          LoadBalancerPort: '80'
-          Protocol: HTTP
+      Name: !Ref LoadBalancerName
       Subnets:
         - !Ref Subnet1
+        - !Ref Subnet2
       SecurityGroups:
-        - !GetAtt ContainerSecurityGroup.GroupId
-    DependsOn: GatewayAttachment
+        - !GetAtt elbSecurityGroup.GroupId
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref elb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetType: ip
+      Name: deployment-target-group
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
 
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/24
+      CidrBlock: 172.31.0.0/16
 
   Subnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.0.0/25
+      CidrBlock: 172.31.0.0/20
+      AvailabilityZone: "ap-south-1a"
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.31.16.0/20
+      AvailabilityZone: "ap-south-1b"
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-
   GatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
